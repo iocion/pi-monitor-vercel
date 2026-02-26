@@ -99,22 +99,32 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [bootTime, setBootTime] = useState<Date | null>(null);
 
-  // API 地址 - 开发时使用本地，生产时使用环境变量
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://192.168.10.73:5000/api/metrics';
+  // API 地址 - 使用 Upstash Redis REST API
+  const UPSTASH_REDIS_REST_URL = process.env.NEXT_PUBLIC_UPSTASH_REDIS_REST_URL || 'https://good-cattle-9550.upstash.io';
+  const UPSTASH_REDIS_REST_TOKEN = process.env.NEXT_PUBLIC_UPSTASH_REDIS_REST_TOKEN || 'ASVOAAImcDE0YTBlOTI5ZDQ0MDQ0NGFkOTYxYjlhMzdmODAyMmI1ZnAxOTU1MA';
   
   // 获取系统数据的函数
   const fetchSystemData = async () => {
     try {
-      const response = await fetch(API_URL, {
-        mode: 'cors',
+      // 从 Upstash Redis 读取数据
+      const response = await fetch(`${UPSTASH_REDIS_REST_URL}/get/pi:metrics`, {
         headers: {
-          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${UPSTASH_REDIS_REST_TOKEN}`,
         },
       });
+      
       if (!response.ok) {
-        throw new Error('Failed to fetch metrics');
+        throw new Error('Failed to fetch from Redis');
       }
-      const data: SystemData = await response.json();
+      
+      const result = await response.json();
+      
+      if (!result.result) {
+        throw new Error('No data in Redis');
+      }
+      
+      // Redis 返回的是字符串，需要解析
+      const data: SystemData = JSON.parse(result.result);
       setSystemData(data);
       setIsOnline(true);
       setError(null);
@@ -142,7 +152,7 @@ export default function Dashboard() {
       
       return data;
     } catch (err) {
-      setError('无法连接到监控服务');
+      setError('无法连接到监控服务 (Redis)');
       setIsOnline(false);
       setIsLoading(false);
       return null;

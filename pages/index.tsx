@@ -11,7 +11,8 @@ import {
   Smartphone,
   Wifi,
   Battery,
-  MemoryStick
+  MemoryStick,
+  AlertCircle
 } from 'lucide-react';
 import { 
   LineChart, 
@@ -40,84 +41,168 @@ interface ProcessInfo {
   memory: number;
 }
 
-// 模拟数据生成器
-const generateMockData = (): SystemMetrics[] => {
-  const data: SystemMetrics[] = [];
-  const now = Date.now();
-  for (let i = 20; i >= 0; i--) {
-    data.push({
-      timestamp: now - i * 5000,
-      cpu_temp: 45 + Math.random() * 10,
-      cpu_usage: 20 + Math.random() * 30,
-      memory_usage: 35 + Math.random() * 20,
-      disk_usage: 42 + Math.random() * 5
-    });
-  }
-  return data;
-};
-
-const mockProcesses: ProcessInfo[] = [
-  { pid: 40619, name: 'python -u monitor.py', cpu: 5.2, memory: 3.1 },
-  { pid: 1234, name: 'node', cpu: 3.1, memory: 2.8 },
-  { pid: 5678, name: 'next-server', cpu: 2.5, memory: 4.2 },
-  { pid: 9012, name: 'sshd', cpu: 0.1, memory: 0.5 },
-];
+interface SystemData {
+  timestamp: number;
+  cpu: {
+    usage: number;
+    cores: number;
+    frequency: number;
+    temperature: number;
+    per_core: number[];
+    load_avg: number[];
+  };
+  memory: {
+    total: number;
+    available: number;
+    used: number;
+    percent: number;
+    swap_total: number;
+    swap_used: number;
+    swap_percent: number;
+  };
+  disk: {
+    total: number;
+    used: number;
+    free: number;
+    percent: number;
+  };
+  network: {
+    bytes_sent: number;
+    bytes_recv: number;
+    interfaces: { name: string; addresses: any[] }[];
+  };
+  system: {
+    platform: string;
+    machine: string;
+    processor: string;
+    hostname: string;
+    python_version: string;
+    boot_time: string;
+    uptime_seconds: number;
+    uptime_formatted: string;
+  };
+  gpu?: {
+    temperature: number;
+    memory: number;
+  };
+  top_processes: { pid: number; name: string; cpu_percent: number; memory_percent: number }[];
+  _demo?: boolean;
+}
 
 export default function Dashboard() {
   const [metrics, setMetrics] = useState<SystemMetrics[]>([]);
   const [currentMetrics, setCurrentMetrics] = useState<SystemMetrics | null>(null);
+  const [systemData, setSystemData] = useState<SystemData | null>(null);
   const [uptime, setUptime] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
   const [isOnline, setIsOnline] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [bootTime, setBootTime] = useState<Date | null>(null);
 
-  useEffect(() => {
-    // 初始化数据
-    setMetrics(generateMockData());
-    setCurrentMetrics(generateMockData()[20]);
-
-    // 模拟实时更新
-    const interval = setInterval(() => {
+  // 获取系统数据的函数
+  const fetchSystemData = async () => {
+    try {
+      const response = await fetch('/api/metrics-full');
+      if (!response.ok) {
+        throw new Error('Failed to fetch metrics');
+      }
+      const data: SystemData = await response.json();
+      setSystemData(data);
+      setIsOnline(true);
+      setError(null);
+      
+      // 设置启动时间
+      if (data.system?.boot_time) {
+        setBootTime(new Date(data.system.boot_time));
+      }
+      
+      // 转换数据格式用于图表
+      const newMetric: SystemMetrics = {
+        timestamp: Date.now(),
+        cpu_temp: data.cpu?.temperature || 45,
+        cpu_usage: data.cpu?.usage || 20,
+        memory_usage: data.memory?.percent || 35,
+        disk_usage: data.disk?.percent || 42
+      };
+      
       setMetrics(prev => {
-        const newData = [...prev.slice(1), {
-          timestamp: Date.now(),
-          cpu_temp: 45 + Math.random() * 10,
-          cpu_usage: 20 + Math.random() * 30,
-          memory_usage: 35 + Math.random() * 20,
-          disk_usage: 42 + Math.random() * 5
-        }];
-        setCurrentMetrics(newData[newData.length - 1]);
+        const newData = [...prev.slice(-19), newMetric];
         return newData;
       });
-    }, 5000);
+      setCurrentMetrics(newMetric);
+      setIsLoading(false);
+      
+      return data;
+    } catch (err) {
+      setError('无法连接到监控服务');
+      setIsOnline(false);
+      setIsLoading(false);
+      return null;
+    }
+  };
 
-    // 计算运行时间
-    const startTime = Date.now() - (3 * 60 + 19) * 1000; // 模拟已运行3分19秒
-    const uptimeInterval = setInterval(() => {
-      const diff = Date.now() - startTime;
+  useEffect(() => {
+    // 初始加载
+    fetchSystemData();
+    
+    // 每5秒更新一次数据
+    const dataInterval = setInterval(fetchSystemData, 5000);
+    
+    return () => {
+      clearInterval(dataInterval);
+    };
+  }, []);
+
+  // 计算运行时间
+  useEffect(() => {
+    if (!bootTime) return;
+    
+    const updateUptime = () => {
+      const diff = Date.now() - bootTime.getTime();
       const days = Math.floor(diff / (1000 * 60 * 60 * 24));
       const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
       const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
       const seconds = Math.floor((diff % (1000 * 60)) / 1000);
       setUptime({ days, hours, minutes, seconds });
-    }, 1000);
-
-    return () => {
-      clearInterval(interval);
-      clearInterval(uptimeInterval);
     };
-  }, []);
+    
+    updateUptime();
+    const uptimeInterval = setInterval(updateUptime, 1000);
+    
+    return () => clearInterval(uptimeInterval);
+  }, [bootTime]);
 
   const formatTime = (value: number) => value.toString().padStart(2, '0');
+  
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
 
-  const systemInfo = [
-    { icon: Server, label: '版本号', value: 'v2.9.7' },
-    { icon: Terminal, label: 'Node.js版本', value: 'v20.20.0' },
-    { icon: Clock, label: '服务器时间', value: new Date().toLocaleString('zh-CN') },
+  const systemInfo = systemData ? [
+    { icon: Server, label: '主机名', value: systemData.system?.hostname || 'raspberrypi' },
+    { icon: Terminal, label: 'Python版本', value: systemData.system?.python_version || '3.11.2' },
+    { icon: Clock, label: '启动时间', value: bootTime ? bootTime.toLocaleString('zh-CN') : '-' },
     { icon: Smartphone, label: '操作系统', value: 'Linux' },
-    { icon: MemoryStick, label: '内存使用', value: '15 MB / 17 MB' },
-    { icon: Cpu, label: 'CPU 使用', value: `${currentMetrics?.cpu_usage.toFixed(1) || 0}%` },
-    { icon: Activity, label: '运行模式', value: '子进程模式' },
-    { icon: Wifi, label: '进程 PID', value: '40619' },
-  ];
+    { icon: MemoryStick, label: '内存', value: `${systemData.memory?.used?.toFixed(1) || 0} / ${systemData.memory?.total?.toFixed(1) || 0} GB` },
+    { icon: Cpu, label: 'CPU 使用', value: `${systemData.cpu?.usage?.toFixed(1) || 0}%` },
+    { icon: Activity, label: 'CPU核心', value: `${systemData.cpu?.cores || 4}核 @ ${systemData.cpu?.frequency || 2400}MHz` },
+    { icon: Wifi, label: '进程数', value: systemData.top_processes?.length?.toString() || '-' },
+  ] : [];
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <Activity className="w-12 h-12 text-primary animate-spin mx-auto mb-4" />
+          <p className="text-gray-600">正在加载监控数据...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -134,15 +219,35 @@ export default function Dashboard() {
                 <p className="text-sm text-gray-500">进程监控面板</p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
+              {systemData?._demo && (
+                <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full">
+                  演示模式
+                </span>
+              )}
               <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
               <span className="text-sm text-gray-600">{isOnline ? '在线' : '离线'}</span>
+              <button 
+                onClick={fetchSystemData}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                disabled={isLoading}
+              >
+                <RefreshCw className={`w-5 h-5 text-gray-600 ${isLoading ? 'animate-spin' : ''}`} />
+              </button>
             </div>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+        {/* 错误提示 */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-red-500" />
+            <span className="text-red-700">{error}</span>
+          </div>
+        )}
+
         {/* 系统概览 - 运行时间卡片 */}
         <section>
           <h2 className="text-lg font-bold text-gray-900 mb-4">系统概览</h2>
@@ -155,9 +260,12 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <div className="text-3xl font-bold text-gray-900">
-                    {uptime.days}天 {formatTime(uptime.hours)}小时 {formatTime(uptime.minutes)}分 {formatTime(uptime.seconds)}秒
+                    {uptime.days}天 {formatTime(uptime.hours)}:{formatTime(uptime.minutes)}:{formatTime(uptime.seconds)}
                   </div>
                   <p className="text-sm text-gray-500 mt-1">运行时间</p>
+                  {systemData?.system?.uptime_formatted && (
+                    <p className="text-xs text-gray-400 mt-1">系统报告: {systemData.system.uptime_formatted}</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -169,16 +277,22 @@ export default function Dashboard() {
                   <Wifi className="w-5 h-5 text-primary" />
                   <span className="font-medium text-gray-900">网络状态</span>
                 </div>
-                <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">已连接</span>
+                <span className={`px-2 py-1 text-xs rounded-full ${isOnline ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                  {isOnline ? '已连接' : '断开'}
+                </span>
               </div>
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">接口</span>
-                  <span className="text-gray-900">eth0</span>
+                  <span className="text-gray-900">{systemData?.network?.interfaces?.[0]?.name || 'wlan0'}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">IP 地址</span>
-                  <span className="text-gray-900">192.168.1.100</span>
+                  <span className="text-gray-900">{systemData?.network?.interfaces?.[0]?.addresses?.[0]?.address || '192.168.1.100'}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">接收/发送</span>
+                  <span className="text-gray-900">{formatBytes(systemData?.network?.bytes_recv || 0)} / {formatBytes(systemData?.network?.bytes_sent || 0)}</span>
                 </div>
               </div>
             </div>
@@ -190,8 +304,12 @@ export default function Dashboard() {
                 <span className="font-medium text-gray-900">快速操作</span>
               </div>
               <div className="space-y-2">
-                <button className="w-full py-2 px-4 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors">
-                  重启监控
+                <button 
+                  onClick={fetchSystemData}
+                  className="w-full py-2 px-4 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors disabled:opacity-50"
+                  disabled={isLoading}
+                >
+                  {isLoading ? '刷新中...' : '刷新数据'}
                 </button>
                 <button className="w-full py-2 px-4 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors">
                   查看日志
@@ -202,29 +320,30 @@ export default function Dashboard() {
         </section>
 
         {/* 系统信息网格 */}
-        <section>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-gray-900">系统信息</h2>
-            <button className="flex items-center gap-1 text-sm text-primary hover:text-primary-dark">
-              <RefreshCw className="w-4 h-4" />
-              刷新
-            </button>
-          </div>
-          
-          <div className="bg-surface rounded-2xl border border-border shadow-sm overflow-hidden">
-            <div className="grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-border">
-              {systemInfo.map((item, index) => (
-                <div key={index} className="p-4 flex items-start gap-3">
-                  <item.icon className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-                  <div className="min-w-0">
-                    <p className="text-xs text-gray-500 mb-1">{item.label}</p>
-                    <p className="text-sm font-medium text-gray-900 truncate">{item.value}</p>
-                  </div>
-                </div>
-              ))}
+        {systemData && (
+          <section>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-900">系统信息</h2>
+              <span className="text-xs text-gray-500">
+                最后更新: {new Date(systemData.timestamp).toLocaleTimeString('zh-CN')}
+              </span>
             </div>
-          </div>
-        </section>
+            
+            <div className="bg-surface rounded-2xl border border-border shadow-sm overflow-hidden">
+              <div className="grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-border">
+                {systemInfo.map((item, index) => (
+                  <div key={index} className="p-4 flex items-start gap-3">
+                    <item.icon className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <p className="text-xs text-gray-500 mb-1">{item.label}</p>
+                      <p className="text-sm font-medium text-gray-900 truncate">{item.value}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* 实时监控图表 */}
         <section>
@@ -237,7 +356,7 @@ export default function Dashboard() {
                 <Thermometer className="w-5 h-5 text-orange-500" />
                 <span className="font-medium text-gray-900">CPU 温度</span>
                 <span className="ml-auto text-2xl font-bold text-orange-500">
-                  {currentMetrics?.cpu_temp.toFixed(1) || 0}°C
+                  {currentMetrics?.cpu_temp.toFixed(1) || systemData?.cpu?.temperature?.toFixed(1) || 0}°C
                 </span>
               </div>
               <div className="h-48">
@@ -256,7 +375,7 @@ export default function Dashboard() {
                       stroke="#94a3b8"
                       fontSize={10}
                     />
-                    <YAxis stroke="#94a3b8" fontSize={10} />
+                    <YAxis stroke="#94a3b8" fontSize={10} domain={[30, 70]} />
                     <Tooltip 
                       labelFormatter={(value) => new Date(value).toLocaleString('zh-CN')}
                       formatter={(value: number) => [`${value.toFixed(1)}°C`, '温度']}
@@ -280,7 +399,7 @@ export default function Dashboard() {
                 <Cpu className="w-5 h-5 text-blue-500" />
                 <span className="font-medium text-gray-900">CPU 使用率</span>
                 <span className="ml-auto text-2xl font-bold text-blue-500">
-                  {currentMetrics?.cpu_usage.toFixed(1) || 0}%
+                  {currentMetrics?.cpu_usage.toFixed(1) || systemData?.cpu?.usage?.toFixed(1) || 0}%
                 </span>
               </div>
               <div className="h-48">
@@ -299,7 +418,7 @@ export default function Dashboard() {
                       stroke="#94a3b8"
                       fontSize={10}
                     />
-                    <YAxis stroke="#94a3b8" fontSize={10} />
+                    <YAxis stroke="#94a3b8" fontSize={10} domain={[0, 100]} />
                     <Tooltip 
                       labelFormatter={(value) => new Date(value).toLocaleString('zh-CN')}
                       formatter={(value: number) => [`${value.toFixed(1)}%`, '使用率']}
@@ -323,7 +442,7 @@ export default function Dashboard() {
                 <MemoryStick className="w-5 h-5 text-purple-500" />
                 <span className="font-medium text-gray-900">内存使用率</span>
                 <span className="ml-auto text-2xl font-bold text-purple-500">
-                  {currentMetrics?.memory_usage.toFixed(1) || 0}%
+                  {currentMetrics?.memory_usage.toFixed(1) || systemData?.memory?.percent?.toFixed(1) || 0}%
                 </span>
               </div>
               <div className="h-48">
@@ -342,7 +461,7 @@ export default function Dashboard() {
                       stroke="#94a3b8"
                       fontSize={10}
                     />
-                    <YAxis stroke="#94a3b8" fontSize={10} />
+                    <YAxis stroke="#94a3b8" fontSize={10} domain={[0, 100]} />
                     <Tooltip 
                       labelFormatter={(value) => new Date(value).toLocaleString('zh-CN')}
                       formatter={(value: number) => [`${value.toFixed(1)}%`, '使用率']}
@@ -366,7 +485,7 @@ export default function Dashboard() {
                 <HardDrive className="w-5 h-5 text-green-500" />
                 <span className="font-medium text-gray-900">磁盘使用率</span>
                 <span className="ml-auto text-2xl font-bold text-green-500">
-                  {currentMetrics?.disk_usage.toFixed(1) || 0}%
+                  {currentMetrics?.disk_usage.toFixed(1) || systemData?.disk?.percent?.toFixed(1) || 0}%
                 </span>
               </div>
               <div className="h-48">
@@ -385,7 +504,7 @@ export default function Dashboard() {
                       stroke="#94a3b8"
                       fontSize={10}
                     />
-                    <YAxis stroke="#94a3b8" fontSize={10} />
+                    <YAxis stroke="#94a3b8" fontSize={10} domain={[0, 100]} />
                     <Tooltip 
                       labelFormatter={(value) => new Date(value).toLocaleString('zh-CN')}
                       formatter={(value: number) => [`${value.toFixed(1)}%`, '使用率']}
@@ -421,12 +540,12 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {mockProcesses.map((process) => (
+                  {(systemData?.top_processes || []).map((process) => (
                     <tr key={process.pid} className="hover:bg-gray-50">
                       <td className="px-4 py-3 text-sm text-gray-900 font-mono">{process.pid}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">{process.name}</td>
-                      <td className="px-4 py-3 text-sm text-gray-900">{process.cpu}%</td>
-                      <td className="px-4 py-3 text-sm text-gray-900">{process.memory}%</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{process.cpu_percent.toFixed(1)}%</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{process.memory_percent.toFixed(1)}%</td>
                     </tr>
                   ))}
                 </tbody>

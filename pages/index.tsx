@@ -99,10 +99,18 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [bootTime, setBootTime] = useState<Date | null>(null);
 
+  // API 地址 - 开发时使用本地，生产时使用环境变量
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://192.168.10.73:5000/api/metrics';
+  
   // 获取系统数据的函数
   const fetchSystemData = async () => {
     try {
-      const response = await fetch('/api/metrics-full');
+      const response = await fetch(API_URL, {
+        mode: 'cors',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
       if (!response.ok) {
         throw new Error('Failed to fetch metrics');
       }

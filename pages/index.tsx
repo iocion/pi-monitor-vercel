@@ -314,26 +314,6 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
-
-            {/* 快速操作 */}
-            <div className="bg-surface rounded-2xl p-6 border border-border shadow-sm">
-              <div className="flex items-center gap-2 mb-4">
-                <Terminal className="w-5 h-5 text-primary" />
-                <span className="font-medium text-gray-900">快速操作</span>
-              </div>
-              <div className="space-y-2">
-                <button 
-                  onClick={fetchSystemData}
-                  className="w-full py-2 px-4 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors disabled:opacity-50"
-                  disabled={isLoading}
-                >
-                  {isLoading ? '刷新中...' : '刷新数据'}
-                </button>
-                <button className="w-full py-2 px-4 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors">
-                  查看日志
-                </button>
-              </div>
-            </div>
           </div>
         </section>
 

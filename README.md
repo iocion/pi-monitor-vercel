@@ -88,9 +88,24 @@ pi-monitor-dashboard/
 └── package.json          # 依赖
 ```
 
-## 截图
+## 截图展示 🤓
 
-系统概览、实时监控图表、进程列表等功能一应俱全。
+### 系统概览面板
+显示运行时间、网络状态、快速操作按钮
+
+![系统概览](./screenshots/dashboard-overview.jpg)
+
+### 移动端适配
+完美支持手机浏览器访问，随时随地监控你的 Pi
+
+![移动端视图](./screenshots/mobile-view.jpg)
+
+### 进程列表
+实时显示当前运行的进程，包括 PID、名称、CPU 和内存占用
+
+![进程列表](./screenshots/process-list.jpg)
+
+> 截图展示的是 Raspberry Pi 5 的实际运行状态，包括 openclaw-gateway 等进程
 
 ## License
 

@@ -1,6 +1,8 @@
 # Pi Monitor Dashboard
 
-为 `python -u monitor.py` (PID 40619) 监控脚本打造的现代化控制面板。
+为 Raspberry Pi 打造的现代化系统监控面板。
+
+![Pi Monitor Dashboard](./screenshots/dashboard-full.jpg)
 
 ## 特性
 
